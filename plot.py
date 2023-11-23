@@ -26,22 +26,29 @@ def on_close(event):
     exit() # on preview close, don't keep re-opening plots
 
 if __name__ == "__main__":
-    # ensure that the program producing output is actually flushing the data! This is a gotchya if python is the source
     parser = argparse.ArgumentParser(
-        description="csv plotting utility. Pipe csv to stdin. Produces columnwise plots and screenshots.")
+        description="CSV plotting utility. Pipe CSV to stdin. Produces columnwise plots and screenshots. Can give a preview every n seconds for long running inputs.")
     parser.add_argument(
-        "labels", help="yaml string which describes what columns to display. e.g. \"{'0': 'position_x'}\"")
+        "labels", help="yaml string which describes what columns to display and their names. \
+            note that the header is not used: column names must be specified here. \
+            e.g. \"{'0': 'position_x'}\"")
     parser.add_argument(
-        "-s", "--screenshot-path", help="If not specified, the plots are instead shown on the screen. e.g. -s \"$PWD/img.png\"")
+        "-i", "--ignore-header", type=bool, nargs='?', const=True, help="discard the header line. needed if a header is present.")
     parser.add_argument(
-        "-t", "--time", type=bool, nargs='?', const=True, help="Is the first column the time column? Not specified = false. If true, the column label numbering is: TIME,0,1,2,3,4...")
+        "-s", "--screenshot-path", help="e.g. -s \"$PWD/img.png\". \
+            save the result as an image. if specified AND --preview is not used, then no graph is displayed on the screen.")
     parser.add_argument(
-        "-p", "--preview", type=float, default=0, help="Roughly every n seconds, display the graph.")
+        "-t", "--time", type=bool, nargs='?', const=True, help="is the first column the time column? not specified = false. \
+            If true, the column label numbering is: TIME,0,1,2,3,4...")
+    parser.add_argument(
+        "-p", "--preview", type=float, default=-1, help="roughly every n seconds, update the graph display.\
+            ensure that the input program is flushing it's data. this is a gotchya if no data is seen right away.")
     args = parser.parse_args()
+    IGNORE_HEADER = args.ignore_header
     SCREENSHOT_PATH = args.screenshot_path
     COLUMN_LABELS = yaml.safe_load(args.labels)
     TIME = args.time
-    PREVIEW = args.preview
+    PREVIEW = args.preview # -1 indicates unused
     last_preview_display_time = 0
     del args
 
@@ -60,6 +67,8 @@ if __name__ == "__main__":
         rows.append(numpy.ndarray(dtype=numpy.float32, shape=0))
     insertion_index = 0
 
+    if IGNORE_HEADER:
+        next(sys.stdin)
     for line in sys.stdin:
         if (insertion_index >= rows[0].shape[0]):
             # dynamic resize rows by doubling
@@ -74,7 +83,7 @@ if __name__ == "__main__":
             rows[row_index + (1 if TIME else 0)][insertion_index] = cells[cell_index + (1 if TIME else 0)]
             row_index += 1
 
-        if PREVIEW != 0 and time.time() - last_preview_display_time > PREVIEW:
+        if PREVIEW != -1 and time.time() - last_preview_display_time > PREVIEW:
             last_preview_display_time = time.time()
             temp_rows = []
             for r in rows:
@@ -90,7 +99,9 @@ if __name__ == "__main__":
         temp_rows.append(r[:insertion_index]) # view not copy
 
     draw(fig, temp_rows, TIME, COLUMN_LABELS, keys)
+
     if SCREENSHOT_PATH != None:
         fig.savefig(SCREENSHOT_PATH)
-    else:
+    if SCREENSHOT_PATH == None or PREVIEW != -1:
+        pyplot.title("complete") # after screenshow
         pyplot.show()
